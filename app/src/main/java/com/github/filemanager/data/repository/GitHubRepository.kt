@@ -32,13 +32,13 @@ class GitHubRepository(
         }
     }
 
-    suspend fun getContents(owner: String, repo: String, path: String = ""): Result<List<ContentItem>> = 
+    suspend fun getContents(owner: String, repo: String, path: String = "", branch: String? = null): Result<List<ContentItem>> = 
         withContext(Dispatchers.IO) {
             try {
                 val response = if (path.isEmpty()) {
-                    apiService.getRepoContents(owner, repo)
+                    apiService.getRepoContents(owner, repo, branch)
                 } else {
-                    val result = apiService.getContents(owner, repo, path)
+                    val result = apiService.getContents(owner, repo, path, branch)
                     when (result) {
                         is List<*> -> result.filterIsInstance<ContentItem>()
                         is ContentItem -> listOf(result)

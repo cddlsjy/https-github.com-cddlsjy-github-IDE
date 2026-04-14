@@ -22,6 +22,18 @@ class GitHubViewModel(
     private val _fileContent = MutableStateFlow<ContentItem?>(null)
     val fileContent: StateFlow<ContentItem?> = _fileContent.asStateFlow()
 
+    // 初始化时自动登录
+    init {
+        checkAutoLogin()
+    }
+
+    private fun checkAutoLogin() {
+        val savedToken = GitHubApiClient.getToken()
+        if (!savedToken.isNullOrBlank() && !_uiState.value.isLoggedIn) {
+            validateAndLogin(savedToken)
+        }
+    }
+
     fun setToken(token: String) {
         GitHubApiClient.setToken(token)
     }
@@ -83,42 +95,7 @@ class GitHubViewModel(
         }
     }
 
-    fun loadContents(owner: String, repo: String, path: String = "") {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoadingContents = true) }
-            
-            val result = repository.getContents(owner, repo, path)
-            result.fold(
-                onSuccess = { items ->
-                    val nodes = items.map { item ->
-                        FileNode(
-                            name = item.name,
-                            path = item.path,
-                            type = item.type,
-                            sha = item.sha,
-                            size = item.size,
-                            downloadUrl = item.download_url
-                        )
-                    }
-                    _uiState.update {
-                        it.copy(
-                            isLoadingContents = false,
-                            currentPath = path,
-                            contentItems = nodes
-                        )
-                    }
-                },
-                onFailure = { error ->
-                    _uiState.update {
-                        it.copy(
-                            isLoadingContents = false,
-                            error = "加载内容失败: ${error.message}"
-                        )
-                    }
-                }
-            )
-        }
-    }
+
 
     fun loadFileForEdit(owner: String, repo: String, path: String) {
         viewModelScope.launch {
@@ -231,6 +208,48 @@ class GitHubViewModel(
         _uiState.value = GitHubUiState()
         _fileContent.value = null
     }
+
+    fun setCurrentBranch(branch: String?) {
+        _uiState.update { it.copy(currentBranch = branch) }
+    }
+
+    fun loadContents(owner: String, repo: String, path: String = "", branch: String? = null) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingContents = true) }
+            
+            val effectiveBranch = branch ?: _uiState.value.currentBranch
+            val result = repository.getContents(owner, repo, path, effectiveBranch)
+            result.fold(
+                onSuccess = { items ->
+                    val nodes = items.map { item ->
+                        FileNode(
+                            name = item.name,
+                            path = item.path,
+                            type = item.type,
+                            sha = item.sha,
+                            size = item.size,
+                            downloadUrl = item.download_url
+                        )
+                    }
+                    _uiState.update {
+                        it.copy(
+                            isLoadingContents = false,
+                            currentPath = path,
+                            contentItems = nodes
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            isLoadingContents = false,
+                            error = "加载内容失败: ${error.message}"
+                        )
+                    }
+                }
+            )
+        }
+    }
 }
 
 data class GitHubUiState(
@@ -247,7 +266,8 @@ data class GitHubUiState(
     val isLoadingFile: Boolean = false,
     val isSaving: Boolean = false,
     val saveSuccess: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val currentBranch: String? = null
 )
 
 class GitHubViewModelFactory(

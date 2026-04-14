@@ -1,5 +1,7 @@
 package com.github.filemanager.data.network
 
+import android.content.Context
+import android.content.SharedPreferences
 import com.github.filemanager.data.api.GitHubApiService
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -10,15 +12,25 @@ import java.util.concurrent.TimeUnit
 object GitHubApiClient {
 
     private const val BASE_URL = "https://api.github.com/"
+    private const val PREFS_NAME = "github_prefs"
+    private const val KEY_TOKEN = "github_token"
     
     private var token: String? = null
+    private lateinit var prefs: SharedPreferences
+
+    fun init(context: Context) {
+        prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        token = prefs.getString(KEY_TOKEN, null)
+    }
 
     fun setToken(newToken: String) {
         token = newToken
+        prefs.edit().putString(KEY_TOKEN, newToken).apply()
     }
 
     fun clearToken() {
         token = null
+        prefs.edit().remove(KEY_TOKEN).apply()
     }
 
     fun getToken(): String? = token

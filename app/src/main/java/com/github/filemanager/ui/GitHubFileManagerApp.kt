@@ -34,7 +34,8 @@ fun GitHubFileManagerApp() {
                     onRepoSelected = { repo ->
                         selectedRepo = repo
                         currentScreen = "browser"
-                        viewModel.loadContents(repo.owner.login, repo.name)
+                        viewModel.setCurrentBranch(repo.defaultBranch)
+                        viewModel.loadContents(repo.owner.login, repo.name, "", repo.defaultBranch)
                     },
                     onLogout = {
                         viewModel.logout()

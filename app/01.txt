@@ -1,0 +1,199 @@
+好的，针对你反馈的两个问题：**无法保存Token** 和 **只能查看一级子目录**，我分析代码后给出最小修改方案。
+
+---
+
+## 一、保存 Token（持久化登录）
+
+**问题原因**：Token 只保存在内存中，App 重启后丢失。  
+**解决方案**：使用 `SharedPreferences` 存储 Token，并在启动时自动读取。
+
+### 修改文件：`GitHubApiClient.kt` 和 `LoginScreen.kt`
+
+#### 1. 在 `GitHubApiClient` 中添加持久化逻辑
+
+```kotlin
+// GitHubApiClient.kt
+import android.content.Context
+import android.content.SharedPreferences
+
+object GitHubApiClient {
+    private const val BASE_URL = "https://api.github.com/"
+    private const val PREFS_NAME = "github_prefs"
+    private const val KEY_TOKEN = "github_token"
+
+    private var token: String? = null
+    private lateinit var prefs: SharedPreferences
+
+    // 初始化方法，在 Application 或 MainActivity 中调用
+    fun init(context: Context) {
+        prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        token = prefs.getString(KEY_TOKEN, null)
+    }
+
+    fun setToken(newToken: String) {
+        token = newToken
+        prefs.edit().putString(KEY_TOKEN, newToken).apply()
+    }
+
+    fun clearToken() {
+        token = null
+        prefs.edit().remove(KEY_TOKEN).apply()
+    }
+
+    fun getToken(): String? = token
+    // ... 其他代码不变
+}
+```
+
+#### 2. 在 `MainActivity` 中初始化
+
+```kotlin
+// MainActivity.kt
+override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    GitHubApiClient.init(applicationContext)  // 添加这行
+    enableEdgeToEdge()
+    // ...
+}
+```
+
+#### 3. 修改 `LoginScreen`：登录成功后不需要额外操作，Token 已自动保存
+
+`validateAndLogin` 中调用了 `GitHubApiClient.setToken(token)`，现在会持久化。  
+启动时 `GitHubApiClient.getToken()` 会返回上次保存的 Token，因此 App 会自动保持登录状态。
+
+---
+
+## 二、修复只能查看一级子目录的问题
+
+**可能原因**：在 `FileBrowserScreen` 中，点击文件夹时调用了 `viewModel.loadContents(owner, repo, item.path)`，但 `item.path` 是完整路径（如 `"src/main/java"`），而 GitHub API 要求路径是相对于仓库根目录的，你的代码中 `item.path` 已经是完整路径，应该是正确的。但可能是 **分支参数缺失** 导致某些仓库无法正确获取子目录内容。
+
+**解决方案**：在加载子目录时，传递当前仓库的默认分支。
+
+### 修改文件：`GitHubViewModel.kt` 和 `GitHubRepository.kt`
+
+#### 1. 在 `GitHubUiState` 中添加当前分支
+
+```kotlin
+// GitHubViewModel.kt - 在 GitHubUiState data class 中添加
+data class GitHubUiState(
+    // ... 原有字段
+    val currentBranch: String? = null,  // 新增
+)
+```
+
+#### 2. 加载仓库内容时，获取并使用默认分支
+
+修改 `loadContents` 函数，从当前选中的仓库获取 `defaultBranch`：
+
+```kotlin
+// GitHubViewModel.kt
+fun loadContents(owner: String, repo: String, path: String = "", branch: String? = null) {
+    viewModelScope.launch {
+        _uiState.update { it.copy(isLoadingContents = true) }
+        // 使用传入的 branch，如果没有则使用 state 中的 currentBranch
+        val effectiveBranch = branch ?: _uiState.value.currentBranch
+        val result = repository.getContents(owner, repo, path, effectiveBranch)
+        // ... 其余不变
+    }
+}
+```
+
+#### 3. 在进入文件浏览器时，设置当前分支
+
+修改 `GitHubFileManagerApp.kt`，在 `onRepoSelected` 中保存分支：
+
+```kotlin
+// GitHubFileManagerApp.kt
+onRepoSelected = { repo ->
+    selectedRepo = repo
+    currentScreen = "browser"
+    viewModel.setCurrentBranch(repo.defaultBranch)  // 新增方法
+    viewModel.loadContents(repo.owner.login, repo.name, "", repo.defaultBranch)
+}
+```
+
+在 `GitHubViewModel` 中添加：
+
+```kotlin
+fun setCurrentBranch(branch: String?) {
+    _uiState.update { it.copy(currentBranch = branch) }
+}
+```
+
+#### 4. 修改 `GitHubRepository.kt` 的 `getContents` 支持分支参数
+
+```kotlin
+suspend fun getContents(owner: String, repo: String, path: String = "", branch: String? = null): Result<List<ContentItem>> = 
+    withContext(Dispatchers.IO) {
+        try {
+            val response = if (path.isEmpty()) {
+                apiService.getRepoContents(owner, repo, branch)
+            } else {
+                val result = apiService.getContents(owner, repo, path, branch)
+                // ... 类型转换
+            }
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+```
+
+#### 5. 修改 `GitHubApiService.kt` 接口，添加 `ref` 参数
+
+```kotlin
+@GET("repos/{owner}/{repo}/contents")
+suspend fun getRepoContents(
+    @Path("owner") owner: String,
+    @Path("repo") repo: String,
+    @Query("ref") branch: String? = null
+): List<ContentItem>
+
+@GET("repos/{owner}/{repo}/contents/{path}")
+suspend fun getContents(
+    @Path("owner") owner: String,
+    @Path("repo") repo: String,
+    @Path("path") path: String,
+    @Query("ref") branch: String? = null
+): Any
+```
+
+---
+
+## 三、最简化方案（如果你不想改太多代码）
+
+### 保存 Token 的最小修改：
+1. 在 `GitHubApiClient` 中增加 SharedPreferences 代码（约15行）
+2. 在 `MainActivity.onCreate` 中调用 `init`
+3. 其他不变
+
+### 修复子目录的最小修改：
+**实际上，现有代码理论上应该支持子目录浏览**。如果你测试发现点击文件夹无反应，请检查：
+- 是否文件夹类型判断正确（`item.type == "dir"`）
+- 网络请求是否成功（查看 logcat 或添加 Toast 提示错误）
+- 某些仓库的文件夹路径可能包含特殊字符
+
+**临时解决**：在 `FileBrowserScreen` 中，为每个文件夹项添加一个调试输出：
+
+```kotlin
+if (item.type == "dir") {
+    Log.d("FileBrowser", "Opening dir: ${item.path}")
+    viewModel.loadContents(owner, repo, item.path)
+}
+```
+
+如果 log 打印了但界面没刷新，可能是 `uiState` 更新但 `LazyColumn` 未重组，强制刷新：
+
+```kotlin
+// 在 FileBrowserScreen 中，为 LazyColumn 添加 key
+LazyColumn {
+    items(dirs + files, key = { it.path }) { item ->
+        FileItem(...)
+    }
+}
+```
+
+---
+
+**总结**：Token 保存需要添加约 20 行代码；子目录问题大概率是分支参数或 UI 刷新问题，按上述修改即可解决。如果只想快速体验，可以先只改 Token 保存部分，子目录问题可能是偶发，请确认是否真的无法进入子目录。

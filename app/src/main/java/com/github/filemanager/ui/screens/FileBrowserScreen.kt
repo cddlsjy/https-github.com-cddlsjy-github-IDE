@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import android.util.Log
 import androidx.compose.ui.unit.dp
 import com.github.filemanager.data.model.FileNode
 import com.github.filemanager.ui.viewmodel.GitHubViewModel
@@ -81,11 +82,12 @@ fun FileBrowserScreen(
                     val dirs = uiState.contentItems.filter { it.type == "dir" }
                     val files = uiState.contentItems.filter { it.type == "file" }
 
-                    items(dirs + files) { item ->
+                    items(dirs + files, key = { it.path }) { item ->
                         FileItem(
                             node = item,
                             onClick = {
                                 if (item.type == "dir") {
+                                    Log.d("FileBrowser", "Opening dir: ${item.path}")
                                     viewModel.loadContents(owner, repo, item.path)
                                 } else {
                                     onFileClick(item)

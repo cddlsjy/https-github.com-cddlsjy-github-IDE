@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import com.github.filemanager.data.network.GitHubApiClient
 import com.github.filemanager.ui.GitHubFileManagerApp
 import com.github.filemanager.ui.theme.GitHubFileManagerTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        GitHubApiClient.init(applicationContext)
         enableEdgeToEdge()
         setContent {
             GitHubFileManagerTheme {

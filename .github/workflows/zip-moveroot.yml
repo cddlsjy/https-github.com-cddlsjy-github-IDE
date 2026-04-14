@@ -8,11 +8,11 @@ on:
       zip_file:
         description: '要解压的 ZIP 文件名（例如 "archive.zip"）'
         required: false
-        default: 'gihub-IDE-deespseekSpeed.zip'
+        default: 'github-IDE.zip'
       subdir:
         description: '要移动到根目录的子目录名（可选）'
         required: false
-        default: 'gihub-IDE-deespseekSpeed.zip'
+        default: 'github-IDE.zip'
 
 jobs:
   unpack-and-build:
